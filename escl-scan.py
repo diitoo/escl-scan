@@ -22,8 +22,7 @@ from lxml import etree
 from urllib.parse import urljoin
 
 DEF_NAME = "scan"
-DEF_MAX_WIDTH = 2500
-DEF_MAX_HEIGHT = 3500
+SIZES = {"a4": (2480, 3508), "a5": (1748, 2480), "b5": (2079, 2953), "us": (2550, 3300)}  # approx. real widths and heights (in mm) times 11.81
 MAX_POLL = 50
 NS_SCAN = "http://schemas.hp.com/imaging/escl/2011/05/03"
 NS_PWG = "http://www.pwg.org/schemas/2010/12/sm"
@@ -89,8 +88,8 @@ def main(args):
     colorModes = tree.xpath("//scan:ColorMode/text()", namespaces={"scan": NS_SCAN})
     xResolutions = tree.xpath("//scan:XResolution/text()", namespaces={"scan": NS_SCAN})
     yResolutions = tree.xpath("//scan:YResolution/text()", namespaces={"scan": NS_SCAN})
-    maxWidth = first(tree.xpath("//scan:MaxWidth/text()", namespaces={"scan": NS_SCAN}), DEF_MAX_WIDTH)
-    maxHeight = first(tree.xpath("//scan:MaxHeight/text()", namespaces={"scan": NS_SCAN}), DEF_MAX_HEIGHT)
+    maxWidth = firstInt(tree.xpath("//scan:MaxWidth/text()", namespaces={"scan": NS_SCAN}))
+    maxHeight = firstInt(tree.xpath("//scan:MaxHeight/text()", namespaces={"scan": NS_SCAN}))
 
     # query status
     statusUrl = urljoin(args.url, "eSCL/ScannerStatus")
@@ -151,6 +150,19 @@ def main(args):
     if resolution not in yResolutions:
         error("Unsupported y-resolution '%s', supported: %s" % (resolution, yResolutions))
 
+    # width/height
+    if args.size == "max":
+        width = maxWidth
+        height = maxHeight
+    else:
+        (width, height) = SIZES[args.size]
+    if width > maxWidth:
+        error("Invalid width: %d, maximum: %d" % (width, maxWidth))
+    if height > maxHeight:
+        error("Invalid height: %d, maximum: %d" % (height, maxHeight))
+    log.debug("Width: %d, maxWidth: %d", width, maxWidth)
+    log.debug("Height: %d, maxHeight: %d", height, maxHeight)
+
     # start scanning
     log.debug("Version: %s", version)
     if status != "Idle":
@@ -163,8 +175,8 @@ def main(args):
         "__FORMAT__", format).replace(
         "__COLORMODE__", colorMode).replace(
         "__RESOLUTION__", resolution).replace(
-        "__WIDTH__", maxWidth).replace(
-        "__HEIGHT__", maxHeight)
+        "__WIDTH__", str(width)).replace(
+        "__HEIGHT__", str(height))
     if args.very_verbose:
         log.debug("Sending scan request to %s: %s", startUrl, startReq)
     else:
@@ -198,6 +210,11 @@ def first(a, default=None):
     return a[0] if a else default
 
 
+def firstInt(a, default=None):
+    f = first(a)
+    return int(f) if f else default
+
+
 def error(msg):
     print(msg)
     sys.exit(1)
@@ -210,6 +227,7 @@ if __name__ == "__main__":
     ap.add_argument("-t", "--type", default="jpg", help="desired resulting file type [default: %(default)s]", choices=["jpg", "pdf"])
     ap.add_argument("-r", "--resolution", default="", help="a single value for both X and Y resolution [default: max. available]")
     ap.add_argument("-c", "--color-mode", default="r24", help="RGB24 (r24) or Grayscale8 (g8) [default: %(default)s]", choices=["r24", "g8"])
+    ap.add_argument("-s", "--size", default="max", help="size of scanned paper [default: %(default)s]", choices=["a4", "a5", "b5", "us", "max"])
     ap.add_argument("-v", "--verbose", action="store_true", help="Show debug output")
     ap.add_argument("-V", "--very-verbose", action="store_true", help="Show debug output and all data")
     ap.add_argument("url", help="URL of the scanner, incl. scheme and (if necessary) port")
